@@ -29,7 +29,7 @@ function App() {
     const signal = abortControllerRef.current.signal;
 
     try {
-      const response = await fetch('http://localhost:8000/api/chat/stream', {
+      const response = await fetch('http://localhost:8001/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userContent, history: history }),
@@ -168,7 +168,8 @@ function App() {
           >
             {/* 头像 */}
             <div className={`avatar ${msg.role === 'user' ? 'avatar-user' : 'avatar-ai'}`}>
-              {msg.role === 'user' ? 'U' : 'AI'}  // 先简单处理，后面可替换为头像图片
+              {/* 先简单处理，后面可替换为头像图片 */}
+              {msg.role === 'user' ? 'U' : 'AI'} 
             </div>
 
             {/* 消息气泡 */}
