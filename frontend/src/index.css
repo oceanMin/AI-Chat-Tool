@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局样式重置 */
+* {
+  @apply m-0 p-0 box-border;
+}
+
+body {
+  @apply bg-gray-50 font-sans;
+}
+
+/* 聊天容器 */
+.chat-container {
+  @apply max-w-3xl mx-auto h-screen flex flex-col;
+}
+
+/* 聊天头部 */
+.chat-header {
+  @apply px-4 py-3 bg-white border-b border-gray-200 shadow-sm;
+}
+
+.chat-title {
+  @apply text-xl font-bold text-gray-800;
+}
+
+/* 聊天内容区 */
+.chat-messages {
+  @apply flex-1 overflow-y-auto p-4 space-y-4;
+}
+
+/* 消息通用样式 */
+.message {
+  @apply flex items-start gap-3 max-w-[85%];
+}
+
+/* 用户消息（右对齐） */
+.message-user {
+  @apply ml-auto flex-row-reverse;
+}
+
+/* AI消息（左对齐） */
+.message-ai {
+  @apply mr-auto;
+}
+
+/* 头像样式 */
+.avatar {
+  @apply w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold text-sm;
+}
+
+.avatar-user {
+  @apply bg-blue-500;
+}
+
+.avatar-ai {
+  @apply bg-green-500;
+}
+
+/* 消息气泡 */
+.message-bubble {
+  @apply px-4 py-2 rounded-2xl break-words leading-relaxed;
+}
+
+.message-bubble-user {
+  @apply bg-blue-500 text-white rounded-tr-none;
+}
+
+.message-bubble-ai {
+  @apply bg-gray-200 text-gray-800 rounded-tl-none;
+}
+
+/* 加载状态 */
+.loading-bubble {
+  @apply bg-gray-200 text-gray-500 px-4 py-2 rounded-2xl rounded-tl-none;
+}
+
+/* 输入区 */
+.chat-input {
+  @apply p-3 bg-white border-t border-gray-200 shadow-lg;
+}
+
+.input-wrapper {
+  @apply flex gap-2 max-w-3xl mx-auto;
+}
+
+.input-box {
+  @apply flex-1 px-4 py-3 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none;
+}
+
+.send-button {
+  @apply px-6 py-3 bg-blue-500 text-white rounded-full hover:bg-blue-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex-shrink-0;
+}
+
+/* Markdown和代码高亮样式 */
+.markdown-content {
+  @apply w-full;
+}
+
+.markdown-content p {
+  @apply my-1;
+}
+
+.markdown-content pre {
+  @apply bg-gray-800 text-white p-3 rounded-lg my-2 overflow-x-auto;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 px-1 py-0.5 rounded text-sm;
+}
+
+.markdown-content pre code {
+  @apply bg-transparent px-0 py-0;
+}
+
+.markdown-content h1 {
+  @apply text-xl font-bold my-2;
+}
+
+.markdown-content h2 {
+  @apply text-lg font-bold my-2;
+}
+
+.markdown-content ul {
+  @apply list-disc pl-5 my-1;
+}
+
+.markdown-content ol {
+  @apply list-decimal pl-5 my-1;
+}
+
+.markdown-content strong {
+  @apply font-bold;
+}
+
+.markdown-content em {
+  @apply italic;
+}
+/* 加载状态气泡（打字中显示） */
+.loading-bubble {
+  @apply bg-gray-200 text-gray-500 px-4 py-2 rounded-2xl rounded-tl-none;
+}
