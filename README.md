@@ -29,7 +29,7 @@ backend/\
 
 ```bash
 # 克隆项目
-git clone https://github.com/your-username/ai-chat-tool.git
+git clone https://github.com/oceanMin/AI-Chat-Tool.git
 cd ai-chat-tool/backend
 
 # 创建虚拟环境（可选）
