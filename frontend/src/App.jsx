@@ -2,132 +2,152 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import AuthPage from './views/AuthPage';
 
-// 配置：打字延迟（毫秒）
+// 配置
 const TYPE_DELAY = 50;
+const LOGGED_IN_USER = 'CHAT_USER';
+const SESSION_STORAGE_PREFIX = 'CHAT_SESSIONS_';
 
-// 本地存储
-const STORAGE_KEY = 'CHAT_SESSIONS';
-const loadSessions = () => {
+// 加载对应用户的会话
+const loadUserSessions = (username) => {
   try {
-    const items = localStorage.getItem(STORAGE_KEY);
-    return items ? JSON.parse(items) : [];
+    const key = SESSION_STORAGE_PREFIX + username;
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
   } catch {
     return [];
   }
 };
-const saveSessions = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+
+// 保存对应用户的会话
+const saveUserSessions = (username, sessions) => {
+  const key = SESSION_STORAGE_PREFIX + username;
+  localStorage.setItem(key, JSON.stringify(sessions));
+};
+
+const getCurrentUser = () => {
+  try {
+    const u = localStorage.getItem(LOGGED_IN_USER);
+    return u ? JSON.parse(u) : null;
+  } catch {
+    return null;
+  }
+};
 
 export default function App() {
-  const [sessions, setSessions] = useState(loadSessions);
+  const [user, setUser] = useState(getCurrentUser);
+  const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [input, setInput] = useState('');
   const [darkMode, setDarkMode] = useState(false);
   const [renameId, setRenameId] = useState(null);
   const [newTitle, setNewTitle] = useState('');
-  const [isLoading, setIsLoading] = useState(false); // 控制输入框禁用
-  const abortControllerRef = useRef(null); // 用于终止请求
+  const [isLoading, setIsLoading] = useState(false);
+  const abortControllerRef = useRef(null);
   const scrollRef = useRef(null);
 
-  // 初始化
+  // 登录后加载用户会话
   useEffect(() => {
-    if (sessions.length > 0) {
-      setActiveId(sessions[0].id);
+    if (user) {
+      const userSessions = loadUserSessions(user.username);
+      setSessions(userSessions);
+      if (userSessions.length > 0) {
+        setActiveId(userSessions[0].id);
+      } else {
+        // 兜底：创建默认会话
+        const def = { id: Date.now().toString(), title: '新对话', messages: [] };
+        setSessions([def]);
+        setActiveId(def.id);
+        saveUserSessions(user.username, [def]);
+      }
     } else {
-      const newSession = { id: Date.now().toString(), title: '新对话', messages: [] };
-      const newSessions = [newSession];
-      setSessions(newSessions);
-      saveSessions(newSessions);
-      setActiveId(newSession.id);
+      setSessions([]);
+      setActiveId(null);
     }
-  }, []);
+  }, [user]);
 
   // 自动滚动
   useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollIntoView({ behavior: 'smooth' }), 80);
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 80);
+    return () => clearTimeout(timer);
   }, [activeId, sessions]);
 
-  // 安全获取会话
+  // 获取当前会话
   const getActiveSession = () => {
-    const found = sessions.find(s => s.id === activeId);
-    if (!found) return { id: null, title: '', messages: [] };
-    return {
-      ...found,
-      messages: (found.messages || []).filter(Boolean).map(m => ({
-        role: m.role || 'user',
-        content: m.content || '',
-        streaming: m.streaming ?? false,
-      })),
-    };
+    const found = sessions.find((s) => s.id === activeId);
+    return found || { id: null, title: '', messages: [] };
   };
+
   const activeSession = getActiveSession();
 
-  // 新建对话
+  // 会话操作（按用户保存）
   const createSession = () => {
-    const newSession = { id: Date.now().toString(), title: '新对话', messages: [] };
-    const newSessions = [newSession, ...sessions];
-    setSessions(newSessions);
-    saveSessions(newSessions);
-    setActiveId(newSession.id);
+    if (!user) return;
+    const ns = { id: Date.now().toString(), title: '新对话', messages: [] };
+    const newList = [ns, ...sessions];
+    setSessions(newList);
+    saveUserSessions(user.username, newList);
+    setActiveId(ns.id);
   };
 
-  // 更新会话
-  const updateSession = (sessionId, updater) => {
-    setSessions(prev => {
-      const updated = prev.map(s => s.id === sessionId ? { ...s, ...updater(s) } : s);
-      saveSessions(updated);
+  const updateSession = (sid, updater) => {
+    if (!user) return;
+    setSessions((prev) => {
+      const updated = prev.map((s) => (s.id === sid ? { ...s, ...updater(s) } : s));
+      saveUserSessions(user.username, updated);
       return updated;
     });
   };
 
-  // 清空当前会话
   const clearCurrentSession = () => {
-    if (!activeId) return;
+    if (!activeId || !user) return;
     updateSession(activeId, () => ({ messages: [] }));
   };
 
-  // 删除单条会话
-  const deleteSession = (id) => {
-    const newSessions = sessions.filter(s => s.id !== id);
-    setSessions(newSessions);
-    saveSessions(newSessions);
-    if (activeId === id) {
-      setActiveId(newSessions.length ? newSessions[0].id : null);
+  const deleteSession = (sid) => {
+    if (!user) return;
+    const filtered = sessions.filter((s) => s.id !== sid);
+    setSessions(filtered);
+    saveUserSessions(user.username, filtered);
+    if (activeId === sid) {
+      setActiveId(filtered[0]?.id || null);
     }
   };
 
-  // 重命名会话
-  const startRename = (id, currentTitle) => {
-    setRenameId(id);
-    setNewTitle(currentTitle);
+  const startRename = (sid, title) => {
+    setRenameId(sid);
+    setNewTitle(title);
   };
+
   const confirmRename = () => {
-    if (!renameId || !newTitle.trim()) return;
+    if (!renameId || !newTitle.trim() || !user) return;
     updateSession(renameId, () => ({ title: newTitle.trim() }));
     setRenameId(null);
-    setNewTitle('');
   };
 
-  // 一键清空所有历史
   const clearAllSessions = () => {
-    if (window.confirm('确定要清空所有会话历史吗？此操作不可恢复！')) {
-      const newSession = { id: Date.now().toString(), title: '新对话', messages: [] };
-      setSessions([newSession]);
-      saveSessions([newSession]);
-      setActiveId(newSession.id);
+    if (!user) return;
+    if (window.confirm('确定要清空所有会话吗？')) {
+      const ns = { id: Date.now().toString(), title: '新对话', messages: [] };
+      setSessions([ns]);
+      saveUserSessions(user.username, [ns]);
+      setActiveId(ns.id);
     }
   };
 
-  // 逐字打字函数
+  // 打字动画 + 终止
   const typeTextEffect = useCallback((sid, aiIndex, fullText) => {
     let current = '';
     const chars = fullText.split('');
-    const timeouts = [];
+    const timers = [];
 
-    for (let i = 0; i < chars.length; i++) {
-      const timeout = setTimeout(() => {
-        current += chars[i];
-        updateSession(sid, s => {
+    chars.forEach((c, i) => {
+      const timer = setTimeout(() => {
+        current += c;
+        updateSession(sid, (s) => {
           const msgs = [...s.messages];
           if (msgs[aiIndex]) {
             msgs[aiIndex].content = current;
@@ -136,95 +156,74 @@ export default function App() {
           return { messages: msgs };
         });
       }, i * TYPE_DELAY);
-      timeouts.push(timeout);
-    }
+      timers.push(timer);
+    });
 
-    // 保存 timeout 列表，用于终止时清除
-    abortControllerRef.current = { timeouts };
+    abortControllerRef.current = { timers };
 
-    // 全部打完关闭光标
     setTimeout(() => {
-      updateSession(sid, s => {
+      updateSession(sid, (s) => {
         const msgs = [...s.messages];
         if (msgs[aiIndex]) msgs[aiIndex].streaming = false;
         return { messages: msgs };
       });
-      setIsLoading(false); // 恢复输入框
+      setIsLoading(false);
     }, chars.length * TYPE_DELAY);
 
-    // 返回清理函数
-    return () => {
-      timeouts.forEach(clearTimeout);
-    };
+    return () => timers.forEach(clearTimeout);
   }, []);
 
-  // 终止回答
   const stopAnswer = () => {
     if (!abortControllerRef.current) return;
-
-    // 1. 清除打字定时器
-    if (abortControllerRef.current.timeouts) {
-      abortControllerRef.current.timeouts.forEach(clearTimeout);
+    if (abortControllerRef.current.timers) {
+      abortControllerRef.current.timers.forEach(clearTimeout);
     }
-
-    // 2. 终止 fetch 请求
     if (abortControllerRef.current.controller) {
       abortControllerRef.current.controller.abort();
     }
-
-    // 3. 关闭 AI 思考状态
-    const current = getActiveSession();
-    if (current.id) {
-      const aiIndex = current.messages.length;
-      updateSession(current.id, s => {
-        const msgs = [...s.messages];
-        if (msgs[aiIndex]) {
-          msgs[aiIndex].streaming = false;
-        }
-        return { messages: msgs };
-      });
-    }
-
-    setIsLoading(false); // 恢复输入框
+    updateSession(activeId, (s) => {
+      const msgs = [...s.messages];
+      if (msgs[msgs.length - 1]) msgs[msgs.length - 1].streaming = false;
+      return { messages: msgs };
+    });
+    setIsLoading(false);
   };
 
   // 发送消息
   const sendMessage = async (e) => {
     e.preventDefault();
     const txt = input.trim();
-    if (!txt || isLoading) return; // 加载中禁止重复发送
+    if (!txt || isLoading || !user) return;
 
-    const current = getActiveSession();
-    if (!current.id) return;
-    const sid = current.id;
+    const cur = getActiveSession();
+    if (!cur.id) return;
+    const sid = cur.id;
+    setIsLoading(true);
 
-    setIsLoading(true); // 禁用输入框
-
-    // 1. 用户消息
+    // 用户消息
     const userMsg = { role: 'user', content: txt };
-    const newMsgList = [...current.messages, userMsg];
+    const afterUser = [...cur.messages, userMsg];
     updateSession(sid, () => ({
-      messages: newMsgList,
-      title: current.title === '新对话' ? txt.slice(0, 18) + '...' : current.title,
+      messages: afterUser,
+      title: cur.title === '新对话' ? txt.slice(0, 16) + '...' : cur.title,
     }));
     setInput('');
 
-    // 2. AI 占位（思考中）
+    // AI占位
     const aiMsg = { role: 'assistant', content: '', streaming: true };
-    const finalList = [...newMsgList, aiMsg];
+    const finalList = [...afterUser, aiMsg];
     updateSession(sid, () => ({ messages: finalList }));
     const aiIndex = finalList.length - 1;
 
-    // 3. 构建历史
+    // 历史
     const history = [];
-    for (let i = 0; i < current.messages.length; i += 2) {
-      const u = current.messages[i]?.content;
-      const a = current.messages[i + 1]?.content;
+    for (let i = 0; i < cur.messages.length; i += 2) {
+      const u = cur.messages[i]?.content;
+      const a = cur.messages[i + 1]?.content;
       if (u && a) history.push([u, a]);
     }
 
     try {
-      // 创建 AbortController 用于终止请求
       const controller = new AbortController();
       abortControllerRef.current = { controller };
 
@@ -232,10 +231,10 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: txt, history }),
-        signal: controller.signal, // 绑定终止信号
+        signal: controller.signal,
       });
 
-      if (!res.ok) throw new Error('服务连接失败');
+      if (!res.ok) throw new Error('服务异常');
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -247,19 +246,12 @@ export default function App() {
         fullText += decoder.decode(value, { stream: true });
       }
 
-      // 开始逐字打字
       typeTextEffect(sid, aiIndex, fullText);
-
     } catch (err) {
-      if (err.name === 'AbortError') {
-        // 用户主动终止，不显示错误
-        return;
-      }
-      updateSession(sid, s => {
+      updateSession(sid, (s) => {
         const msgs = [...s.messages];
         if (msgs[aiIndex]) {
-          msgs[aiIndex].content = '❌ 连接失败，请检查后端服务';
-          msgs[aiIndex].streaming = false;
+          msgs[aiIndex] = { role: 'assistant', content: '❌ 连接失败', streaming: false };
         }
         return { messages: msgs };
       });
@@ -267,51 +259,48 @@ export default function App() {
     }
   };
 
+  // 退出登录
+  const logout = () => {
+    localStorage.removeItem(LOGGED_IN_USER);
+    setUser(null);
+  };
+
+  // 未登录 → 跳登录页
+  if (!user) {
+    return <AuthPage onLoginSuccess={setUser} />;
+  }
+
+  // 主界面
   return (
     <div className={`h-screen flex ${darkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      {/* 左侧会话栏 */}
-      <div className={`w-64 border-r p-3 flex flex-col ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
-        <div className="flex gap-2 mb-3">
-          <button
-            onClick={createSession}
-            className="flex-1 bg-blue-500 text-white py-2 rounded-lg text-sm"
-          >
-            + 新建对话
-          </button>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-lg ${darkMode ? 'bg-yellow-400' : 'bg-gray-200'}`}
-            title="切换深色模式"
-          >
-            {darkMode ? '☀️' : '🌙'}
-          </button>
+      {/* 左侧栏 */}
+      <div className={`w-64 border-r flex flex-col ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        {/* 用户信息 */}
+        <div className="p-3 border-b flex items-center gap-2">
+          <img src={user.avatar} className="w-10 h-10 rounded-full object-cover" />
+          <div className="flex-1">
+            <div className="text-sm font-medium">{user.username}</div>
+            <button onClick={logout} className="text-xs text-red-500">退出登录</button>
+          </div>
         </div>
 
-        <div className="flex gap-2 mb-3">
-          <button
-            onClick={clearCurrentSession}
-            className="flex-1 bg-orange-500 text-white py-2 rounded-lg text-sm"
-          >
-            清空当前会话
-          </button>
-          <button
-            onClick={clearAllSessions}
-            className="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm"
-          >
-            清空所有
-          </button>
+        <div className="p-3 flex gap-2">
+          <button onClick={createSession} className="flex-1 bg-blue-500 text-white py-2 rounded-lg text-sm">+ 新建对话</button>
+          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-lg">{darkMode ? '☀️' : '🌙'}</button>
         </div>
 
-        <div className="overflow-y-auto space-y-2">
-          {sessions.map(s => (
+        <div className="px-3 pb-3 flex gap-2">
+          <button onClick={clearCurrentSession} className="flex-1 bg-orange-500 text-white py-2 rounded-lg text-sm">清空当前</button>
+          <button onClick={clearAllSessions} className="flex-1 bg-red-500 text-white py-2 rounded-lg text-sm">清空所有</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 space-y-1">
+          {sessions.map((s) => (
             <div
               key={s.id}
-              className={`p-2 rounded cursor-pointer flex items-center justify-between group ${
-                activeId === s.id
-                  ? darkMode ? 'bg-blue-900' : 'bg-blue-100'
-                  : darkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-              }`}
               onClick={() => setActiveId(s.id)}
+              className={`p-2 rounded flex justify-between items-center cursor-pointer group text-sm ${activeId === s.id ? (darkMode ? 'bg-blue-900' : 'bg-blue-100') : 'hover:bg-gray-100'
+                }`}
             >
               {renameId === s.id ? (
                 <input
@@ -320,27 +309,21 @@ export default function App() {
                   onChange={(e) => setNewTitle(e.target.value)}
                   onBlur={confirmRename}
                   onKeyDown={(e) => e.key === 'Enter' && confirmRename()}
-                  className="w-full bg-transparent outline-none text-sm"
+                  className="bg-transparent outline-none w-full"
                 />
               ) : (
-                <span className="truncate text-sm flex-1">{s.title || '未命名'}</span>
+                <span className="truncate flex-1">{s.title}</span>
               )}
 
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+              <div className="opacity-0 group-hover:opacity-100 flex gap-1">
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startRename(s.id, s.title);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); startRename(s.id, s.title); }}
                   className="text-xs text-blue-500"
                 >
                   重命名
                 </button>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSession(s.id);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); deleteSession(s.id); }}
                   className="text-xs text-red-500"
                 >
                   删除
@@ -351,41 +334,40 @@ export default function App() {
         </div>
       </div>
 
-      {/* 聊天区 */}
+      {/* 聊天区域 */}
       <div className="flex-1 flex flex-col">
-        <div className={`p-4 border-b font-bold ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-sm'}`}>
-          AI 对话助手
-        </div>
+        <div className={`p-4 border-b font-bold ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white'}`}>AI 对话助手</div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {activeSession.messages.map((m, i) => (
             <div key={i} className={`flex items-start gap-3 max-w-[85%] ${m.role === 'user' ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}>
-              {/* 头像 */}
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                m.role === 'user' ? 'bg-blue-500' : 'bg-green-500'
-              }`}>
-                {m.role === 'user' ? 'U' : 'AI'}
-              </div>
-
-              {/* 气泡 */}
-              <div className={`px-4 py-2 rounded-2xl ${
-                m.role === 'user'
-                  ? darkMode ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-blue-500 text-white rounded-tr-none'
-                  : darkMode ? 'bg-gray-700 text-gray-200 rounded-tl-none' : 'bg-gray-200 text-gray-800 rounded-tl-none'
-              }`}>
+              <img
+                src={m.role === 'user' ? user.avatar : 'https://picsum.photos/seed/ai/200/200'}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+              <div
+                className={`px-4 py-2 rounded-2xl ${m.role === 'user'
+                    ? 'bg-blue-500 text-white'
+                    : darkMode
+                      ? 'bg-gray-700 text-gray-200'
+                      : 'bg-gray-200 text-gray-800'
+                  }`}
+              >
                 {m.role === 'user' ? (
                   m.content
                 ) : (
                   <div>
                     {m.content === '' && m.streaming ? (
-                      <span className={darkMode ? 'text-gray-400' : 'text-gray-500'}>AI正在思考中……</span>
+                      <span className="text-gray-400">AI正在思考中……</span>
                     ) : (
                       <ReactMarkdown
                         components={{
                           code({ inline, className, children }) {
                             const match = /language-(\w+)/.exec(className || '');
                             return inline ? (
-                              <code className={`px-1 rounded text-sm ${darkMode ? 'bg-gray-600' : 'bg-gray-100'}`}>{children}</code>
+                              <code className={`px-1 rounded text-sm ${darkMode ? 'bg-gray-600' : 'bg-gray-100'}`}>
+                                {children}
+                              </code>
                             ) : (
                               <SyntaxHighlighter style={dracula} language={match?.[1] || 'text'}>
                                 {String(children).replace(/\n$/, '')}
@@ -397,26 +379,26 @@ export default function App() {
                         {m.content}
                       </ReactMarkdown>
                     )}
-                    {m.streaming && <span className="inline-block w-1.5 h-4 bg-gray-600 ml-1 animate-blink align-middle"></span>}
                   </div>
                 )}
               </div>
             </div>
           ))}
-          <div ref={scrollRef} />
+          <div ref={scrollRef}></div>
         </div>
 
-        {/* 输入框 + 终止按钮 */}
-        <div className={`p-3 border-t flex gap-2 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+        {/* 输入框 */}
+        <div className={`p-4 border-t flex gap-3 items-end ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            className={`flex-1 border rounded-full px-4 py-3 outline-none focus:ring-2 focus:ring-blue-400 ${
-              darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300'
-            } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            rows="1"
-            placeholder={isLoading ? 'AI正在思考中，无法输入...' : '输入消息...'}
-            disabled={isLoading} // 思考中禁用输入
+            className={`flex-1 px-4 py-3 border rounded-lg min-h-[60px] max-h-[120px] resize-none
+      outline-none text-base
+      ${darkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-200 text-gray-800'}
+      ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
+            disabled={isLoading}
+            placeholder="输入消息..."
+            rows={2}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -424,20 +406,26 @@ export default function App() {
               }
             }}
           />
+
           {isLoading ? (
             <button
               onClick={stopAnswer}
-              className="bg-gray-500 text-white px-5 py-3 rounded-full"
+              className="w-10 h-10 flex items-center justify-center bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
+              title="停止生成"
             >
-              发送
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 4h12v16H6z" />
+              </svg>
             </button>
           ) : (
             <button
-              type="submit"
               onClick={sendMessage}
-              className="bg-blue-500 text-white px-5 py-3 rounded-full"
+              className="w-10 h-10 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors"
+              title="发送"
             >
-              发送
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M2.017 21.5L23 12 2.017 2.5 2 8.999 17 12 2 15z" />
+              </svg>
             </button>
           )}
         </div>
